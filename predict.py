@@ -1,14 +1,40 @@
 from cog import BasePredictor, Input, Path
+from PIL import Image
 import torch
-from style import VanGoghStyleTransfer
-class Predictor(cog.Predictor):
-    def setup(self):
-        self.model = VanGoghStyleTransfer()
-        self.model.train('vgdb_2016.csv', 'imgs', num_train_steps=100, batch_size=4)
+import torchvision.transforms as T
 
-    @cog.input("input_image", type=cog.Path)
-    @cog.output("output_image", type=cog.Path)
-    def predict(self, input_image, output_image):
-        self.model.style_transfer(input_image, output_image)
-        return output_image
-    
+from style import VanGoghStyleTransfer
+# Preprocess 
+
+def preprocess(image_in):
+  input_img = Image.open(image_in)
+  
+  transform = T.Compose([
+     T.Resize(256),
+     T.ToTensor(),
+     T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+  ])
+  
+  input_tensor = transform(input_img).unsqueeze(0)
+  return input_tensor
+
+# Postprocess
+
+def postprocess(output_tensor):
+  output_img = (output_tensor + 1) / 2
+  output_img = T.ToPILImage()(output_img[0])
+  return output_img
+
+class Predictor(BasePredictor):
+    def setup(self):
+        """Load the model into memory to make running multiple predictions efficient"""
+        self.model = torch.load("./weights.pth")
+
+    # The arguments and types the model takes as input
+    def predict(self,
+          image: Path = Input(description="Grayscale input image")
+    ) -> Path:
+        """Run a single prediction on the model"""
+        processed_image = preprocess(image)
+        output = self.model(processed_image)
+        return postprocess(output)
